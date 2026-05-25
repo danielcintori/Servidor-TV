@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Painel Admin | TVs</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="admin-page">
+    <img id="logoSesi" src="https://www.sesisp.org.br/images/Sesi-SP.jpg" alt="Sesi-SP">
+    <main class="admin-shell">
+      <section class="admin-header">
+        <div>
+          <p class="eyebrow">InfoSesi</p>
+          <h1>Painel de mídias - InfoSesi</h1>
+        </div>
+        <a class="tv-link" href="/tv" target="_blank" rel="noreferrer">Abrir /tv</a>
+      </section>
+
+      <section class="upload-panel">
+        <form id="uploadForm">
+          <label class="field">
+            <span>Arquivo</span>
+            <input id="mediaInput" name="media" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" required>
+          </label>
+
+          <label class="field">
+            <span>Tempo da imagem na TV</span>
+            <input id="durationInput" name="durationSeconds" type="number" min="3" max="120" value="10">
+          </label>
+
+          <button id="submitButton" type="submit">Enviar mídia</button>
+          <p id="message" class="message" role="status"></p>
+        </form>
+      </section>
+
+      <section class="media-section">
+        <div class="section-title">
+          <h2>Playlist atual</h2>
+          <button id="refreshButton" type="button">Atualizar lista</button>
+        </div>
+        <div id="mediaList" class="media-list"></div>
+      </section>
+    </main>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>

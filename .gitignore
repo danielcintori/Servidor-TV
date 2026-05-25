@@ -1,0 +1,4 @@
+node_modules/
+data/midias.json
+uploads/*
+!uploads/.gitkeep

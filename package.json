@@ -1,0 +1,14 @@
+{
+  "name": "raspberry-tv-midias",
+  "version": "1.0.0",
+  "description": "Protótipo web para exibição automática de mídias em TVs com Raspberry Pi.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.1.1"
+  }
+}
