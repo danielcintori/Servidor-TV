@@ -1,88 +1,197 @@
-//documentação feita por Guilherme Fagundes Leal :)
-//bibliotecas
+import express from "express";
+import multer from "multer";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const express = require("express"); // framework web para node js para desenvolvimentos de APIs
-const multer = require("multer"); // biblioteca padrão para fazer upload de arquivos que permite salvar eles na memória
-const fs = require("fs"); //biblioteca que permite interagir com arquivos (ler, gravar, deletar etc)
-const path = require("path"); // biblioteca para transformação e navegação de files de plataformas diferentes (linux, windows etc)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-//localhost:3000
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-//arquivos e pastas
-const ROOT = __dirname; // /PROJETOTV
-const PUBLIC_DIR = path.join(ROOT, "public"); // /public -> pasta com html, css e js
-const UPLOAD_DIR = path.join(ROOT, "uploads"); // /uploads -> .gitkeep
-const DATA_DIR = path.join(ROOT, "data"); // /data -> .gitkeep e midias.json
-const DB_FILE = path.join(DATA_DIR, "midias.json"); // arquivo midias.json
+const ROOT = __dirname;
+const PUBLIC_DIR = path.join(ROOT, "public");
+const UPLOAD_DIR = path.join(ROOT, "uploads");
+const DATA_DIR = path.join(ROOT, "data");
+const MEDIA_DB_FILE = path.join(DATA_DIR, "midias.json");
+const TV_DB_FILE = path.join(DATA_DIR, "tvs.json");
+const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 
-const allowedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm"]); // tipos de arquivos permitidos
-const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]); // tipos de imagem
-const videoExtensions = new Set([".mp4", ".webm"]); // tipos de vídeos
+const ONLINE_WINDOW_MS = 45 * 1000;
+const allowedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm"]);
+const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const videoExtensions = new Set([".mp4", ".webm"]);
 
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });//pega os arquivos dentro da pasta /uploads e procura se tem outras pastas dentro
-fs.mkdirSync(DATA_DIR, { recursive: true });//pega os arquivos dentro da pasta /data e procura se tem outras pastas dentro
+const defaultTvs = [
+  { id: "recepcao", name: "Recepcao", group: "Geral", createdAt: new Date().toISOString(), lastSeenAt: null },
+  { id: "corredor", name: "Corredor", group: "Geral", createdAt: new Date().toISOString(), lastSeenAt: null },
+  { id: "sala-professores", name: "Sala dos professores", group: "Equipe", createdAt: new Date().toISOString(), lastSeenAt: null }
+];
 
-function readMidias() {
-  if (!fs.existsSync(DB_FILE)) return []; //se não existe midias.json, ele retorna um array vazio
-  //se não ele lê o que está dentro do array em midias.json
+const defaultSettings = {
+  ticker: {
+    enabled: false,
+    text: "",
+    speedSeconds: 24,
+    updatedAt: new Date().toISOString()
+  }
+};
+
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function readJson(file, fallback) {
+  if (!fs.existsSync(file)) return fallback;
+
   try {
-    //adiciona ao json o que foi lido
-    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
-    console.error("Erro ao ler banco local:", error);
-    return [];
+    console.error(`Erro ao ler ${path.basename(file)}:`, error);
+    return fallback;
   }
 }
 
+function writeJson(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function ensureJson(file, fallback) {
+  if (!fs.existsSync(file)) {
+    writeJson(file, fallback);
+  }
+}
+
+ensureJson(MEDIA_DB_FILE, []);
+ensureJson(TV_DB_FILE, defaultTvs);
+ensureJson(SETTINGS_FILE, defaultSettings);
+
+function readMidias() {
+  return readJson(MEDIA_DB_FILE, []);
+}
+
 function writeMidias(midias) {
-  //recebe midias, escreve dentro do midias.json 
-  fs.writeFileSync(DB_FILE, JSON.stringify(midias, null, 2));
+  writeJson(MEDIA_DB_FILE, midias);
+}
+
+function readTvs() {
+  return readJson(TV_DB_FILE, defaultTvs);
+}
+
+function writeTvs(tvs) {
+  writeJson(TV_DB_FILE, tvs);
+}
+
+function readSettings() {
+  return { ...defaultSettings, ...readJson(SETTINGS_FILE, defaultSettings) };
+}
+
+function writeSettings(settings) {
+  writeJson(SETTINGS_FILE, settings);
+}
+
+function slugify(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+function makeUniqueId(base, existingIds) {
+  const cleanBase = slugify(base) || "tv";
+  let nextId = cleanBase;
+  let count = 2;
+
+  while (existingIds.has(nextId)) {
+    nextId = `${cleanBase}-${count}`;
+    count += 1;
+  }
+
+  return nextId;
+}
+
+function parseJsonArray(value) {
+  if (!value) return [];
+  const text = String(value).trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch (_error) {
+    return text
+      .replace(/^\[/, "")
+      .replace(/\]$/, "")
+      .split(",")
+      .map((item) => item.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+  }
 }
 
 function getMediaType(filename) {
-  //pega o caminho do arquivo coloca em lower case
   const extension = path.extname(filename).toLowerCase();
-  //verifica se é uma imagem
   if (imageExtensions.has(extension)) return "image";
-  //ou um vídeo
   if (videoExtensions.has(extension)) return "video";
-  //se não retorna como desconhecido
   return "unknown";
 }
-//cria um espaço no disco
+
+function getGroups(tvs) {
+  return [...new Set(tvs.map((tv) => tv.group).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function decorateTv(tv) {
+  const lastSeenAt = tv.lastSeenAt ? Date.parse(tv.lastSeenAt) : 0;
+  const online = Boolean(lastSeenAt && Date.now() - lastSeenAt <= ONLINE_WINDOW_MS);
+  return { ...tv, online };
+}
+
+function updateHeartbeat(tvId) {
+  if (!tvId) return null;
+
+  const tvs = readTvs();
+  const index = tvs.findIndex((tv) => tv.id === tvId);
+  if (index === -1) return null;
+
+  tvs[index] = { ...tvs[index], lastSeenAt: new Date().toISOString() };
+  writeTvs(tvs);
+  return tvs[index];
+}
+
+function isMediaForTv(media, tv, tvId) {
+  const targetMode = media.targetMode || "all";
+  const targetTvIds = Array.isArray(media.targetTvIds) ? media.targetTvIds : [];
+  const targetGroups = Array.isArray(media.targetGroups) ? media.targetGroups : [];
+
+  if (targetMode === "all") return true;
+  if (targetMode === "tvs") return Boolean(tvId && targetTvIds.includes(tvId));
+  if (targetMode === "groups") return Boolean(tv?.group && targetGroups.includes(tv.group));
+  return true;
+}
+
 const storage = multer.diskStorage({
-  destination: (_req, _file, callback) => callback(null, UPLOAD_DIR), //determina o caminho de destino que é /uploads e manda o arquivo dentro
+  destination: (_req, _file, callback) => callback(null, UPLOAD_DIR),
   filename: (_req, file, callback) => {
-    const extension = path.extname(file.originalname).toLowerCase(); //caminho para o arquivo
-    const baseName = path
-      .basename(file.originalname, extension)
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-zA-Z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .toLowerCase();
-      //magia 0_0
-    callback(null, `${Date.now()}-${baseName || "midia"}${extension}`); //data + nome do arquivo
+    const extension = path.extname(file.originalname).toLowerCase();
+    const baseName = slugify(path.basename(file.originalname, extension));
+    callback(null, `${Date.now()}-${baseName || "midia"}${extension}`);
   }
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 300 * 1024 * 1024 }, //limite do tamanho do arquivo
+  limits: { fileSize: 300 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
     const extension = path.extname(file.originalname).toLowerCase();
     if (!allowedExtensions.has(extension)) {
-      return callback(new Error("Formato nao permitido. Use jpg, png, webp, mp4 ou webm.")); //verifica se o tipo do arquivo está dentro dos permitidos
+      return callback(new Error("Formato nao permitido. Use jpg, png, webp, mp4 ou webm."));
     }
     callback(null, true);
   }
 });
 
-app.use(express.json()); //o aplicativo usa o express.json que analisa os arquivos JSON
-app.use(express.static(PUBLIC_DIR)); //conecta o frontend
-//usa o endpoint uploads e determina um tempo máximo de 1 hora de cache
+app.use(express.json({ limit: "1mb" }));
+app.use(express.static(PUBLIC_DIR));
 app.use("/uploads", express.static(UPLOAD_DIR, {
   maxAge: "1h",
   setHeaders: (res) => {
@@ -90,103 +199,176 @@ app.use("/uploads", express.static(UPLOAD_DIR, {
   }
 }));
 
-//quando tenta voltar para root apenas redireciona para /admin
 app.get("/", (_req, res) => {
   res.redirect("/admin");
 });
 
-//quando for escrito o endpoint /admin é levado para o arquivo admin.html
 app.get("/admin", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin.html"));
 });
 
-//quando for escrito o endpoint /tv é levado para o arquivo tv.html
 app.get("/tv", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "tv.html"));
 });
 
-//endpoint que leva a leitura do JSON na função readMidias()
+app.get("/api/config", (_req, res) => {
+  const tvs = readTvs().map(decorateTv);
+  res.json({
+    tvs,
+    groups: getGroups(tvs),
+    settings: readSettings()
+  });
+});
+
+app.get("/api/tvs", (_req, res) => {
+  res.json(readTvs().map(decorateTv));
+});
+
+app.post("/api/tvs", (req, res) => {
+  const name = String(req.body.name || "").trim();
+  const group = String(req.body.group || "Geral").trim() || "Geral";
+
+  if (!name) {
+    return res.status(400).json({ error: "Informe o nome da TV." });
+  }
+
+  const tvs = readTvs();
+  const tv = {
+    id: makeUniqueId(req.body.id || name, new Set(tvs.map((item) => item.id))),
+    name,
+    group,
+    createdAt: new Date().toISOString(),
+    lastSeenAt: null
+  };
+
+  tvs.push(tv);
+  writeTvs(tvs);
+
+  res.status(201).json(decorateTv(tv));
+});
+
+app.delete("/api/tvs/:id", (req, res) => {
+  const tvs = readTvs();
+  const exists = tvs.some((tv) => tv.id === req.params.id);
+
+  if (!exists) {
+    return res.status(404).json({ error: "TV nao encontrada." });
+  }
+
+  writeTvs(tvs.filter((tv) => tv.id !== req.params.id));
+
+  const midias = readMidias().map((media) => ({
+    ...media,
+    targetTvIds: Array.isArray(media.targetTvIds)
+      ? media.targetTvIds.filter((id) => id !== req.params.id)
+      : []
+  }));
+  writeMidias(midias);
+
+  res.status(204).end();
+});
+
+app.post("/api/settings/ticker", (req, res) => {
+  const settings = readSettings();
+  const text = String(req.body.text || "").trim().slice(0, 240);
+  const speedSeconds = Number.parseInt(req.body.speedSeconds, 10);
+
+  settings.ticker = {
+    enabled: Boolean(req.body.enabled) && text.length > 0,
+    text,
+    speedSeconds: Number.isFinite(speedSeconds) ? Math.min(Math.max(speedSeconds, 8), 90) : 24,
+    updatedAt: new Date().toISOString()
+  };
+
+  writeSettings(settings);
+  res.json(settings.ticker);
+});
+
 app.get("/api/midias", (_req, res) => {
   res.json(readMidias());
 });
 
-//Pega a primeira mídia, quando foi postada ou atualizada e a playlist em que ela está, se não retorna null caso não exista
-app.get("/api/midia-atual", (_req, res) => {
-  //pega todas as mídias e coloca na constante
-  const midias = readMidias();
+app.get("/api/midia-atual", (req, res) => {
+  const tvId = String(req.query.tvId || req.query.tv || "").trim();
+  const heartbeatTv = updateHeartbeat(tvId);
+  const tv = heartbeatTv || readTvs().find((item) => item.id === tvId) || null;
+  const settings = readSettings();
+  const playlist = readMidias().filter((media) => isMediaForTv(media, tv, tvId));
+
   res.json({
-    updatedAt: midias[0]?.createdAt || null,
-    current: midias[0] || null,
-    playlist: midias
+    updatedAt: playlist[0]?.createdAt || null,
+    current: playlist[0] || null,
+    playlist,
+    ticker: settings.ticker,
+    tv: tv ? decorateTv(tv) : null
   });
 });
 
-//posta uma mídia única, se não houver um arquivo responde com um erro
 app.post("/api/midias", upload.single("media"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Envie um arquivo no campo media." });
   }
-  //duração de que a mídia vai ser mostrada
+
+  const tvs = readTvs();
+  const groups = getGroups(tvs);
   const durationSeconds = Number.parseInt(req.body.durationSeconds, 10);
-  //configurações da mídia postada
+  const targetMode = ["all", "groups", "tvs"].includes(req.body.targetMode) ? req.body.targetMode : "all";
+  const targetTvIds = parseJsonArray(req.body.targetTvIds).filter((id) => tvs.some((tv) => tv.id === id));
+  const targetGroups = parseJsonArray(req.body.targetGroups).filter((group) => groups.includes(group));
+
+  if (targetMode === "tvs" && !targetTvIds.length) {
+    fs.rm(path.join(UPLOAD_DIR, req.file.filename), { force: true }, () => {});
+    return res.status(400).json({ error: "Escolha pelo menos uma TV para este conteudo." });
+  }
+
+  if (targetMode === "groups" && !targetGroups.length) {
+    fs.rm(path.join(UPLOAD_DIR, req.file.filename), { force: true }, () => {});
+    return res.status(400).json({ error: "Escolha pelo menos um grupo para este conteudo." });
+  }
+
   const media = {
-    //id sempre vai ser a data atual
     id: `${Date.now()}`,
-    //nome original do upload
     originalName: req.file.originalname,
-    //novo nome atribuido
     filename: req.file.filename,
-    //url que será enviado
     url: `/uploads/${req.file.filename}`,
-    //tipo de arquivo da mídia
     type: getMediaType(req.file.filename),
-    //duração
     durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 10,
-    //tamanho do arquivo
     size: req.file.size,
-    //quando foi criado
+    targetMode,
+    targetTvIds: targetMode === "tvs" ? targetTvIds : [],
+    targetGroups: targetMode === "groups" ? targetGroups : [],
     createdAt: new Date().toISOString()
   };
-  //pega todas as mídias
+
   const midias = readMidias();
-  //tira a primeira mídia do array do midias.json
   midias.unshift(media);
-  //escreve a nova mídias
   writeMidias(midias);
-  
-  //sucesso
+
   res.status(201).json(media);
 });
 
-//dela uma das mídias
 app.delete("/api/midias/:id", (req, res) => {
-  //pega todas as mídias
   const midias = readMidias();
-  //encontra a mídia com o id certo
   const media = midias.find((item) => item.id === req.params.id);
 
-  //se não achar da not found
   if (!media) {
     return res.status(404).json({ error: "Midia nao encontrada." });
   }
 
-  //escreve todas as mídias que não atendem o id da mídia que será deletada
   writeMidias(midias.filter((item) => item.id !== req.params.id));
-  //deleta o caminho para a mídia com o id correspondente
   fs.rm(path.join(UPLOAD_DIR, media.filename), { force: true }, () => {});
-  //sucesso
+
   res.status(204).end();
 });
 
-//erro padrão
 app.use((error, _req, res, _next) => {
   console.error(error);
   res.status(400).json({ error: error.message || "Erro inesperado." });
 });
 
-//mensagem que é passada pelo terminal
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Sistema de TVs rodando em http://localhost:${PORT}`);
   console.log(`Admin: http://localhost:${PORT}/admin`);
-  console.log(`TV: http://localhost:${PORT}/tv`);
+  console.log(`TV geral: http://localhost:${PORT}/tv`);
+  console.log(`TV especifica: http://localhost:${PORT}/tv?tvId=recepcao`);
 });

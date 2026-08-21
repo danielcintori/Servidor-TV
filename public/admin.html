@@ -3,40 +3,112 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Painel Admin | TVs</title>
+    <title>Painel Admin | InfoSesi TVs</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body class="admin-page">
-    <img id="logoSesi" src="https://www.sesisp.org.br/images/Sesi-SP.jpg" alt="Sesi-SP">
     <main class="admin-shell">
       <section class="admin-header">
         <div>
-          <p class="eyebrow">InfoSesi</p>
-          <h1>Painel de mídias - InfoSesi</h1>
+          <p class="eyebrow">InfoSesi TVs</p>
+          <h1>Painel de controle</h1>
         </div>
-        <a class="tv-link" href="/tv" target="_blank" rel="noreferrer">Abrir /tv</a>
+        <a class="tv-link" href="/tv?tvId=recepcao" target="_blank" rel="noreferrer">Abrir TV teste</a>
       </section>
 
-      <section class="upload-panel">
-        <form id="uploadForm">
-          <label class="field">
-            <span>Arquivo</span>
-            <input id="mediaInput" name="media" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" required>
-          </label>
+      <section class="dashboard-grid">
+        <section class="panel upload-panel">
+          <div class="panel-title">
+            <h2>Enviar conteudo</h2>
+            <p>Escolha se a midia entra em todas as TVs, em um grupo ou apenas em TVs especificas.</p>
+          </div>
 
-          <label class="field">
-            <span>Tempo da imagem na TV</span>
-            <input id="durationInput" name="durationSeconds" type="number" min="3" max="120" value="10">
-          </label>
+          <form id="uploadForm" class="stack-form">
+            <label class="field">
+              <span>Arquivo</span>
+              <input id="mediaInput" name="media" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" required>
+            </label>
 
-          <button id="submitButton" type="submit">Enviar mídia</button>
-          <p id="message" class="message" role="status"></p>
-        </form>
+            <div class="form-row">
+              <label class="field">
+                <span>Tempo para imagem</span>
+                <input id="durationInput" name="durationSeconds" type="number" min="3" max="120" value="10">
+              </label>
+
+              <label class="field">
+                <span>Destino</span>
+                <select id="targetModeInput" name="targetMode">
+                  <option value="all">Todas as TVs</option>
+                  <option value="groups">Grupos selecionados</option>
+                  <option value="tvs">TVs especificas</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="targetGroupPanel" class="target-panel" hidden>
+              <strong>Grupos</strong>
+              <div id="groupTargets" class="checkbox-grid"></div>
+            </div>
+
+            <div id="targetTvPanel" class="target-panel" hidden>
+              <strong>TVs</strong>
+              <div id="tvTargets" class="checkbox-grid"></div>
+            </div>
+
+            <button id="submitButton" type="submit">Enviar midia</button>
+            <p id="message" class="message" role="status"></p>
+          </form>
+        </section>
+
+        <section class="panel ticker-panel">
+          <div class="panel-title">
+            <h2>Faixa de mensagem</h2>
+            <p>A faixa aparece no rodape da tela das TVs somente quando estiver ativada.</p>
+          </div>
+
+          <form id="tickerForm" class="stack-form">
+            <label class="toggle-row">
+              <input id="tickerEnabledInput" type="checkbox">
+              <span>Exibir faixa nas TVs</span>
+            </label>
+
+            <label class="field">
+              <span>Mensagem</span>
+              <textarea id="tickerTextInput" maxlength="240" rows="4" placeholder="Ex.: Inscricoes abertas para o evento de sexta-feira."></textarea>
+            </label>
+
+            <label class="field">
+              <span>Velocidade da faixa</span>
+              <input id="tickerSpeedInput" type="number" min="8" max="90" value="24">
+            </label>
+
+            <button id="tickerButton" type="submit">Salvar faixa</button>
+            <p id="tickerMessage" class="message" role="status"></p>
+          </form>
+        </section>
       </section>
 
-      <section class="media-section">
+      <section class="panel tv-section">
         <div class="section-title">
-          <h2>Playlist atual</h2>
+          <div>
+            <h2>TVs cadastradas</h2>
+            <p>Use o link de cada TV no Chromium em modo kiosk do Raspberry.</p>
+          </div>
+          <form id="tvForm" class="inline-form">
+            <input id="tvNameInput" type="text" placeholder="Nome da TV" required>
+            <input id="tvGroupInput" type="text" placeholder="Grupo" value="Geral">
+            <button id="tvButton" type="submit">Adicionar TV</button>
+          </form>
+        </div>
+        <div id="tvList" class="tv-list"></div>
+      </section>
+
+      <section class="panel media-section">
+        <div class="section-title">
+          <div>
+            <h2>Playlist</h2>
+            <p>A ordem atual usa os envios mais recentes primeiro.</p>
+          </div>
           <button id="refreshButton" type="button">Atualizar lista</button>
         </div>
         <div id="mediaList" class="media-list"></div>
