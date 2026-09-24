@@ -1,120 +1,257 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Painel Admin | InfoSesi TVs</title>
-    <link rel="stylesheet" href="/styles.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InfoSesi • Central de TVs</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="admin-page">
-    <main class="admin-shell">
-      <section class="admin-header">
+    <aside class="sidebar">
+      <a class="brand" href="#overview"
+        >InfoSesi<span>Central de TVs · 2.0</span></a
+      >
+      <nav aria-label="Navegação principal">
+        <button data-page="overview" class="active">Visão geral</button
+        ><button data-page="tvs">TVs e grupos</button
+        ><button data-page="media">Biblioteca de mídias</button
+        ><button data-page="playlists">Playlists</button
+        ><button data-page="ticker">Faixa de mensagens</button
+        ><button data-page="settings">Configurações</button>
+      </nav>
+      <p class="sidebar-note">Sua comunicação,<br />em todas as telas.</p>
+    </aside>
+    <main class="workspace">
+      <header class="topbar">
         <div>
-          <p class="eyebrow">InfoSesi TVs</p>
-          <h1>Painel de controle</h1>
+          <p class="eyebrow">COMUNICAÇÃO INSTITUCIONAL</p>
+          <h1 id="pageTitle">Visão geral</h1>
         </div>
-        <a class="tv-link" href="/tv?tvId=recepcao" target="_blank" rel="noreferrer">Abrir TV teste</a>
+        <button id="refresh" class="secondary">Atualizar dados</button>
+      </header>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <p id="dirtyNotice" hidden>Existem alterações ainda não salvas.</p>
+      <section data-view="overview">
+        <div class="stats" id="stats"></div>
+        <section class="panel">
+          <h2>Uma programação para cada espaço</h2>
+          <p>
+            Organize os conteúdos, escolha uma playlist e acompanhe a conexão
+            das TVs.
+          </p>
+          <div id="overviewTvs" class="tv-list"></div>
+        </section>
       </section>
-
-      <section class="dashboard-grid">
-        <section class="panel upload-panel">
-          <div class="panel-title">
-            <h2>Enviar conteudo</h2>
-            <p>Escolha se a midia entra em todas as TVs, em um grupo ou apenas em TVs especificas.</p>
-          </div>
-
+      <section data-view="tvs" hidden>
+        <section class="panel">
+          <h2>Cadastrar TV</h2>
+          <form id="tvForm" class="inline-form">
+            <label
+              >Nome<input
+                name="name"
+                required
+                maxlength="100"
+                placeholder="Recepção" /></label
+            ><label
+              >Grupo<input
+                name="group"
+                required
+                maxlength="100"
+                value="Geral" /></label
+            ><button>Adicionar TV</button>
+          </form>
+        </section>
+        <label class="search-label"
+          >Buscar TV ou grupo<input
+            id="tvSearch"
+            type="search"
+            placeholder="Digite o nome ou grupo"
+        /></label>
+        <div id="tvList" class="tv-list"></div>
+        <section id="tvEditor" class="panel" hidden></section>
+      </section>
+      <section data-view="media" hidden>
+        <section class="panel">
+          <h2>Enviar conteúdo</h2>
           <form id="uploadForm" class="stack-form">
-            <label class="field">
-              <span>Arquivo</span>
-              <input id="mediaInput" name="media" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" required>
-            </label>
-
+            <label
+              >Imagem ou vídeo<input
+                name="media"
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.mp4,.webm"
+                required
+            /></label>
             <div class="form-row">
-              <label class="field">
-                <span>Tempo para imagem</span>
-                <input id="durationInput" name="durationSeconds" type="number" min="3" max="120" value="10">
-              </label>
-
-              <label class="field">
-                <span>Destino</span>
-                <select id="targetModeInput" name="targetMode">
+              <label
+                >Duração de imagens (segundos)<input
+                  name="durationSeconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value="10"
+                  required /></label
+              ><label
+                >Distribuição original<select name="targetMode" id="targetMode">
                   <option value="all">Todas as TVs</option>
                   <option value="groups">Grupos selecionados</option>
-                  <option value="tvs">TVs especificas</option>
-                </select>
-              </label>
+                  <option value="tvs">TVs específicas</option>
+                  <option value="library">
+                    Somente biblioteca / playlists
+                  </option>
+                </select></label
+              >
             </div>
-
-            <div id="targetGroupPanel" class="target-panel" hidden>
-              <strong>Grupos</strong>
-              <div id="groupTargets" class="checkbox-grid"></div>
-            </div>
-
-            <div id="targetTvPanel" class="target-panel" hidden>
-              <strong>TVs</strong>
-              <div id="tvTargets" class="checkbox-grid"></div>
-            </div>
-
-            <button id="submitButton" type="submit">Enviar midia</button>
-            <p id="message" class="message" role="status"></p>
+            <div id="uploadTargets" class="checkbox-grid"></div>
+            <button>Enviar mídia</button
+            ><progress
+              id="uploadProgress"
+              max="100"
+              value="0"
+              hidden
+            ></progress>
           </form>
         </section>
-
-        <section class="panel ticker-panel">
-          <div class="panel-title">
-            <h2>Faixa de mensagem</h2>
-            <p>A faixa aparece no rodape da tela das TVs somente quando estiver ativada.</p>
-          </div>
-
-          <form id="tickerForm" class="stack-form">
-            <label class="toggle-row">
-              <input id="tickerEnabledInput" type="checkbox">
-              <span>Exibir faixa nas TVs</span>
-            </label>
-
-            <label class="field">
-              <span>Mensagem</span>
-              <textarea id="tickerTextInput" maxlength="240" rows="4" placeholder="Ex.: Inscricoes abertas para o evento de sexta-feira."></textarea>
-            </label>
-
-            <label class="field">
-              <span>Velocidade da faixa</span>
-              <input id="tickerSpeedInput" type="number" min="8" max="90" value="24">
-            </label>
-
-            <button id="tickerButton" type="submit">Salvar faixa</button>
-            <p id="tickerMessage" class="message" role="status"></p>
-          </form>
-        </section>
-      </section>
-
-      <section class="panel tv-section">
-        <div class="section-title">
-          <div>
-            <h2>TVs cadastradas</h2>
-            <p>Use o link de cada TV no Chromium em modo kiosk do Raspberry.</p>
-          </div>
-          <form id="tvForm" class="inline-form">
-            <input id="tvNameInput" type="text" placeholder="Nome da TV" required>
-            <input id="tvGroupInput" type="text" placeholder="Grupo" value="Geral">
-            <button id="tvButton" type="submit">Adicionar TV</button>
-          </form>
-        </div>
-        <div id="tvList" class="tv-list"></div>
-      </section>
-
-      <section class="panel media-section">
-        <div class="section-title">
-          <div>
-            <h2>Playlist</h2>
-            <p>A ordem atual usa os envios mais recentes primeiro.</p>
-          </div>
-          <button id="refreshButton" type="button">Atualizar lista</button>
+        <div class="filter-row">
+          <label
+            >Buscar mídia<input
+              id="mediaSearch"
+              type="search"
+              placeholder="Nome do arquivo" /></label
+          ><label
+            >Tipo<select id="mediaType">
+              <option value="">Todos</option>
+              <option value="image">Imagens</option>
+              <option value="video">Vídeos</option>
+            </select></label
+          >
         </div>
         <div id="mediaList" class="media-list"></div>
       </section>
+      <section data-view="playlists" hidden>
+        <div class="section-title">
+          <p>Sequências independentes para cada ambiente.</p>
+          <button id="newPlaylist">Nova playlist</button>
+        </div>
+        <div id="playlistList" class="playlist-grid"></div>
+        <section id="playlistEditor" class="panel" hidden></section>
+      </section>
+      <section data-view="ticker" hidden>
+        <section class="panel">
+          <h2>Personalize a faixa</h2>
+          <label>Aplicar em<select id="tickerScope"></select></label>
+          <form id="tickerForm" class="stack-form">
+            <label class="toggle-row" id="inheritRow"
+              ><input id="tickerInherit" type="checkbox" />Usar configuração
+              geral</label
+            >
+            <fieldset id="tickerFields">
+              <label class="toggle-row"
+                ><input name="enabled" type="checkbox" />Exibir faixa</label
+              ><label
+                >Mensagem<textarea
+                  name="text"
+                  maxlength="240"
+                  rows="3"
+                ></textarea>
+              </label>
+              <div class="form-row">
+                <label
+                  >Fonte (px)<input
+                    name="fontSize"
+                    type="number"
+                    min="12"
+                    max="120"
+                    required /></label
+                ><label
+                  >Altura da faixa (px)<input
+                    name="height"
+                    type="number"
+                    min="32"
+                    max="300"
+                    required /></label
+                ><label
+                  >Tempo da rolagem (segundos)<input
+                    name="speedSeconds"
+                    type="number"
+                    min="8"
+                    max="90"
+                    required
+                /></label>
+                <div></div>
+                <label
+                  >Cor da fonte
+                  <div class="color-fields">
+                    <input
+                      type="color"
+                      data-color="color"
+                      aria-label="Seletor da cor da fonte"
+                    /><input
+                      name="color"
+                      pattern="#[a-fA-F0-9]{6}"
+                      required
+                      aria-label="Cor da fonte em hexadecimal"
+                    /></div></label
+                ><label
+                  >Cor da faixa
+                  <div class="color-fields">
+                    <input
+                      type="color"
+                      data-color="backgroundColor"
+                      aria-label="Seletor da cor da faixa"
+                    /><input
+                      name="backgroundColor"
+                      pattern="#[a-fA-F0-9]{6}"
+                      required
+                      aria-label="Cor da faixa em hexadecimal"
+                    /></div
+                ></label>
+              </div>
+            </fieldset>
+            <p>Prévia de estilo · as medidas são aplicadas em pixels na TV.</p>
+            <div id="tickerPreview" aria-label="Prévia da faixa">
+              <span></span>
+            </div>
+            <div class="actions">
+              <button>Salvar faixa</button
+              ><button type="button" id="tickerReset" class="secondary">
+                Restaurar padrão
+              </button>
+            </div>
+          </form>
+        </section>
+      </section>
+      <section data-view="settings" hidden>
+        <section class="panel">
+          <h2>Distribuição das playlists</h2>
+          <p>
+            Prioridade: TV específica → grupo → geral. “Herdar” procura o
+            próximo nível. Uma playlist vazia exibe a tela de espera.
+          </p>
+          <form id="assignmentForm" class="stack-form">
+            <div id="assignments"></div>
+            <button>Salvar distribuição</button>
+          </form>
+        </section>
+        <section class="panel">
+          <h2>Operação</h2>
+          <p>
+            As TVs consultam atualizações a cada 10 segundos. Volume e atraso
+            inicial são configurados na ficha de cada TV.
+          </p>
+          <p>
+            Quando nenhuma playlist é atribuída, a distribuição original de
+            mídias continua ativa.
+          </p>
+          <p>
+            O armazenamento de referências no navegador não garante reprodução
+            offline dos arquivos.
+          </p>
+          <a href="/healthz" target="_blank" rel="noreferrer"
+            >Verificar servidor</a
+          >
+        </section>
+      </section>
     </main>
-
     <script src="/admin.js"></script>
   </body>
 </html>

@@ -4,3 +4,8 @@ data/settings.json
 data/tvs.json
 uploads/*
 !uploads/.gitkeep
+
+data/playlists.json
+data/backup-*/
+data/*.tmp
+.env

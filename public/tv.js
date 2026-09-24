@@ -2,132 +2,243 @@ const stage = document.querySelector("#stage");
 const statusBadge = document.querySelector("#connectionStatus");
 const ticker = document.querySelector("#ticker");
 const tickerText = document.querySelector("#tickerText");
-
-const POLL_INTERVAL_MS = 10000;
-const FALLBACK_IMAGE_DURATION_MS = 10000;
-
-const params = new URLSearchParams(window.location.search);
-const queryTvId = params.get("tvId") || params.get("tv");
-if (queryTvId) {
-  localStorage.setItem("tv:id", queryTvId);
-}
-
-const tvId = queryTvId || localStorage.getItem("tv:id") || "";
-
-let playlist = [];
-let currentTicker = null;
-let playlistSignature = "";
-let currentIndex = 0;
-let slideTimer = null;
-
-function mediaSignature(items, tickerState) {
-  const mediaPart = items.map((item) => `${item.id}:${item.url}:${item.durationSeconds}`).join("|");
-  const tickerPart = tickerState ? `${tickerState.enabled}:${tickerState.text}:${tickerState.speedSeconds}:${tickerState.updatedAt}` : "";
-  return `${mediaPart}::${tickerPart}`;
-}
-
-function clearSlideTimer() {
-  if (slideTimer) {
-    window.clearTimeout(slideTimer);
-    slideTimer = null;
-  }
-}
-
-function setStatus(online, tvName = "") {
-  const label = tvName || tvId || "geral";
-  statusBadge.textContent = online ? `online • ${label}` : `reconectando • ${label}`;
+const params = new URLSearchParams(location.search);
+const tvId = params.get("tvId") || params.get("tv") || "";
+const cacheKey = `tv:v2:${tvId || "general"}`;
+statusBadge.hidden = !params.has("diagnostic");
+let state = { playlist: [], playback: { muted: true, volume: 50 }, ticker: {} };
+let currentKey = null,
+  currentMedia = null,
+  slideTimer,
+  startupTimer;
+let started = false,
+  starting = false,
+  audioBlocked = false,
+  lastError = "";
+let dispose = () => {};
+const key = (media) => media.entryId || media.id;
+function status(online) {
+  statusBadge.textContent = `${online ? "online" : "reconectando"} • ${state.tv?.name || tvId || "geral"}`;
   statusBadge.classList.toggle("offline", !online);
 }
-
-function renderTicker(tickerState) {
-  currentTicker = tickerState || { enabled: false, text: "" };
-  const shouldShow = Boolean(currentTicker.enabled && currentTicker.text);
-
-  ticker.hidden = !shouldShow;
-  document.body.classList.toggle("has-ticker", shouldShow);
-
-  if (shouldShow) {
-    tickerText.textContent = currentTicker.text;
-    ticker.style.setProperty("--ticker-duration", `${currentTicker.speedSeconds || 24}s`);
-  } else {
-    tickerText.textContent = "";
+function report() {
+  if (!tvId) return;
+  fetch("/api/heartbeat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tvId,
+      mediaId: currentMedia?.id || "",
+      audioBlocked,
+      error: lastError,
+    }),
+  }).catch(() => {});
+}
+function updateTicker() {
+  const t = state.ticker || {};
+  const enabled = Boolean(t.enabled && t.text);
+  ticker.hidden = !enabled;
+  document.documentElement.style.setProperty(
+    "--ticker-height",
+    enabled ? `${t.height || 72}px` : "0px",
+  );
+  ticker.style.height = `${t.height || 72}px`;
+  ticker.style.fontSize = `${t.fontSize || 32}px`;
+  ticker.style.backgroundColor = t.backgroundColor || "#0f766e";
+  ticker.style.color = t.color || "#ffffff";
+  ticker.style.setProperty("--ticker-duration", `${t.speedSeconds || 24}s`);
+  if (tickerText.textContent !== (t.text || ""))
+    tickerText.textContent = t.text || "";
+}
+function applyAudio() {
+  const video = stage.querySelector("video");
+  if (!video) return;
+  video.volume = Math.max(
+    0,
+    Math.min(1, Number(state.playback.volume ?? 50) / 100),
+  );
+  video.muted = state.playback.muted !== false || audioBlocked;
+  if (video.paused) play(video);
+}
+async function play(video) {
+  try {
+    await video.play();
+  } catch (error) {
+    if (!video.isConnected) return;
+    if (error.name === "NotAllowedError") {
+      audioBlocked = true;
+      video.muted = true;
+      report();
+      try {
+        await video.play();
+      } catch {
+        fail("Reprodução bloqueada pelo navegador.");
+      }
+    } else if (error.name !== "AbortError")
+      fail("Não foi possível reproduzir o vídeo.");
   }
 }
-
-function renderEmpty() {
-  clearSlideTimer();
-  stage.innerHTML = `
-    <section class="tv-empty">
-      <h1>InfoSesi TV</h1>
-      <p>${tvId ? "Aguardando conteudo para esta TV." : "Abra esta pagina com /tv?tvId=ID_DA_TV para conteudos individuais."}</p>
-    </section>
-  `;
+function empty(text) {
+  stage.replaceChildren();
+  const section = document.createElement("section");
+  section.className = "tv-empty";
+  const title = document.createElement("h1");
+  title.textContent = "InfoSesi TV";
+  const p = document.createElement("p");
+  p.textContent = text;
+  section.append(title, p);
+  stage.append(section);
 }
-
-function showNextMedia() {
-  if (!playlist.length) {
-    renderEmpty();
+function cleanup() {
+  clearTimeout(slideTimer);
+  dispose();
+  dispose = () => {};
+  const video = stage.querySelector("video");
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+}
+function fail(message) {
+  lastError = message;
+  report();
+  cleanup();
+  empty("Conteúdo indisponível. Tentando o próximo…");
+  slideTimer = setTimeout(next, 5000);
+}
+function next() {
+  const index = state.playlist.findIndex((m) => key(m) === currentKey);
+  show(state.playlist[(index + 1) % state.playlist.length]);
+}
+function show(media) {
+  cleanup();
+  currentMedia = media || null;
+  currentKey = media ? key(media) : null;
+  if (!media) {
+    empty("Aguardando conteúdo para esta TV.");
+    report();
     return;
   }
-
-  clearSlideTimer();
-
-  const media = playlist[currentIndex % playlist.length];
+  lastError = "";
   const isVideo = media.type === "video";
-  stage.innerHTML = isVideo
-    ? `<video class="tv-media" src="${media.url}" autoplay muted loop playsinline></video>`
-    : `<img class="tv-media" src="${media.url}" alt="">`;
-
-  currentIndex = (currentIndex + 1) % playlist.length;
-
-  if (!isVideo && playlist.length > 1) {
-    slideTimer = window.setTimeout(showNextMedia, (media.durationSeconds || 10) * 1000);
+  const element = document.createElement(isVideo ? "video" : "img");
+  element.className = "tv-media";
+  let failureTimer = setTimeout(
+    () => fail("Tempo esgotado ao carregar a mídia."),
+    30000,
+  );
+  const onError = () => fail("Arquivo indisponível ou formato incompatível.");
+  element.addEventListener("error", onError);
+  const listeners = [];
+  function listen(event, fn) {
+    element.addEventListener(event, fn);
+    listeners.push([event, fn]);
   }
-
-  if (isVideo && playlist.length > 1) {
-    const video = stage.querySelector("video");
-    slideTimer = window.setTimeout(showNextMedia, FALLBACK_IMAGE_DURATION_MS);
-    video.addEventListener("loadedmetadata", () => {
-      clearSlideTimer();
-      const duration = Number.isFinite(video.duration) ? video.duration * 1000 : FALLBACK_IMAGE_DURATION_MS;
-      slideTimer = window.setTimeout(showNextMedia, Math.max(duration, 3000));
-    }, { once: true });
+  dispose = () => {
+    clearTimeout(failureTimer);
+    element.removeEventListener("error", onError);
+    for (const [event, fn] of listeners) element.removeEventListener(event, fn);
+  };
+  if (isVideo) {
+    element.playsInline = true;
+    element.preload = "auto";
+    listen("ended", next);
+    listen("pause", () => {
+      if (!element.ended && element.isConnected) play(element);
+    });
+    listen("playing", () => {
+      clearTimeout(failureTimer);
+    });
+    listen("waiting", () => {
+      clearTimeout(failureTimer);
+      failureTimer = setTimeout(() => fail("Vídeo sem resposta."), 30000);
+    });
+    listen("stalled", () => {
+      clearTimeout(failureTimer);
+      failureTimer = setTimeout(
+        () => fail("Falha no carregamento do vídeo."),
+        30000,
+      );
+    });
+  } else {
+    element.alt = "";
+    listen("load", () => {
+      clearTimeout(failureTimer);
+      slideTimer = setTimeout(
+        next,
+        Math.max(1, media.durationSeconds || 10) * 1000,
+      );
+    });
   }
+  element.src = media.url;
+  stage.replaceChildren(element);
+  if (isVideo) applyAudio();
+  report();
 }
-
-function applyState(nextPlaylist, tickerState, tv) {
-  const nextSignature = mediaSignature(nextPlaylist, tickerState);
-  renderTicker(tickerState);
-  setStatus(true, tv?.name);
-
-  if (nextSignature !== playlistSignature) {
-    playlist = nextPlaylist;
-    playlistSignature = nextSignature;
-    currentIndex = 0;
-    showNextMedia();
-    localStorage.setItem("tv:lastState", JSON.stringify({ playlist, ticker: tickerState }));
-  }
+function begin() {
+  if (started || starting) return;
+  starting = true;
+  const delay = state.playback.delayEnabled
+    ? Number(state.playback.delaySeconds) || 0
+    : 0;
+  if (delay > 0) empty("A programação começa em instantes.");
+  startupTimer = setTimeout(() => {
+    started = true;
+    starting = false;
+    show(state.playlist[0]);
+  }, delay * 1000);
 }
-
-async function fetchPlaylist() {
+function applyState(data) {
+  const previousAudio = JSON.stringify(state.playback);
+  state = {
+    ...data,
+    playlist: Array.isArray(data.playlist) ? data.playlist : [],
+    playback: data.playback || { muted: true, volume: 50 },
+  };
+  updateTicker();
+  if (JSON.stringify(state.playback) !== previousAudio) audioBlocked = false;
+  applyAudio();
+  if (!started) begin();
+  else {
+    const retained = state.playlist.find((m) => key(m) === currentKey);
+    if (!retained || retained.url !== currentMedia?.url)
+      show(state.playlist[0]);
+    // Duration/order changes take effect on the next occurrence, without interrupting this item.
+  }
   try {
-    const query = tvId ? `?tvId=${encodeURIComponent(tvId)}` : "";
-    const response = await fetch(`/api/midia-atual${query}`, { cache: "no-store" });
-    const data = await response.json();
-    const nextPlaylist = Array.isArray(data.playlist) ? data.playlist : [];
-    applyState(nextPlaylist, data.ticker, data.tv);
-  } catch (error) {
-    setStatus(false);
-    const cached = localStorage.getItem("tv:lastState");
-    if (!playlist.length && cached) {
-      const parsed = JSON.parse(cached);
-      playlist = Array.isArray(parsed.playlist) ? parsed.playlist : [];
-      renderTicker(parsed.ticker);
-      playlistSignature = mediaSignature(playlist, parsed.ticker);
-      showNextMedia();
-    }
+    localStorage.setItem(cacheKey, JSON.stringify(state));
+  } catch {
+    /* Quota or disabled storage. */
   }
 }
-
-fetchPlaylist();
-window.setInterval(fetchPlaylist, POLL_INTERVAL_MS);
+async function poll() {
+  try {
+    const response = await fetch(
+      `/api/midia-atual?tvId=${encodeURIComponent(tvId)}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) throw new Error("Servidor indisponível");
+    applyState(await response.json());
+    status(true);
+    report();
+  } catch {
+    status(false);
+    if (!starting && !started) {
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey));
+        if (cached && Array.isArray(cached.playlist)) applyState(cached);
+        else empty("Conectando à programação…");
+      } catch {
+        empty("Conectando à programação…");
+      }
+    }
+  } finally {
+    setTimeout(poll, 10000);
+  }
+}
+window.addEventListener("beforeunload", () => {
+  cleanup();
+  clearTimeout(startupTimer);
+});
+poll();
